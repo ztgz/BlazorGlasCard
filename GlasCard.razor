@@ -1,0 +1,145 @@
+﻿@using System.Text
+@using System.Timers
+@implements IDisposable
+
+<div class="glas-card animate-@(toggleAnimation ? "1" : "2") @Classes"
+	 style="@cardStyle @Styles"
+	 @onclick="async () => await Clicked.InvokeAsync()">
+	<div class="glas-content">
+		@ChildContent
+	</div>
+</div>
+
+@code {
+	[Parameter]
+	public RenderFragment ChildContent { get; set; }
+
+	[Parameter]
+	public EventCallback Clicked { get; set; }
+
+	[Parameter]
+	// Optional parameter: Set a custom color on the card,
+	// if more than one color is defined loop trough colors
+	public GlasColor[] Colors { get; set; }
+
+	[Parameter]
+	// Optional paramter: Set a custom width of the card
+	public string Width { get; set; }
+
+	[Parameter]
+	// Optional paramter: Set a custom height of the card
+	public string Height { get; set; }
+
+	[Parameter]
+	// Optional add custom styles to the card
+	public string Styles { get; set; }
+
+	[Parameter]
+	// Optional add custom classes to the card
+	public string Classes { get; set; }
+
+	public record GlasColor(int R, int G, int B);
+
+	private string cardStyle;
+	private Timer changeColorsTimer;
+
+	private int currentColor = 0;
+	private const int animationDurationMilliseconds = 2000;
+
+	// This variable is used to trigger the animation to repeat for new colors,
+	// switching values triggers the animation again
+	private bool toggleAnimation;
+	
+	protected override void OnInitialized()	
+	{
+		changeColorsTimer = new()
+		{
+			AutoReset = true,
+			Enabled = true,
+			Interval = animationDurationMilliseconds,
+		};
+
+		changeColorsTimer.Elapsed += async (sender, e) =>
+		{
+			if (currentColor + 1 >= Colors.Length)
+				currentColor = 0;
+			else
+				currentColor++;
+
+			toggleAnimation = !toggleAnimation;
+			await InvokeAsync(UpdateState);
+			
+			StateHasChanged();
+		};
+	}   
+
+	protected override void OnParametersSet()
+	{
+		UpdateState();
+		base.OnParametersSet();
+	}
+
+	private void UpdateState()
+	{
+		// Decide which colors to use and start/stop timer
+		GlasColor startColor, endColor;		
+		if (HasAnimation())
+		{
+			// Figure out indexes
+			if (currentColor >= Colors.Length)
+				currentColor = 0;
+			
+			var nextColorIndex = currentColor + 1 < Colors.Length
+				? currentColor + 1 
+				: 0;
+
+			// Get active colors
+			startColor = Colors[currentColor];		
+			endColor = Colors[nextColorIndex];
+
+			// Start timer if it's not already running
+			if (!changeColorsTimer.Enabled)
+				changeColorsTimer.Start();
+		}
+		else
+		{
+			startColor = endColor = HasNoColor()
+				? new(255, 255, 255)
+				: Colors[0];
+			
+			// No/one color reset index
+			currentColor = 0;
+
+			if (changeColorsTimer.Enabled)
+				changeColorsTimer.Stop();
+		}
+
+		UpdateStyling(startColor, endColor);
+	}
+
+	private bool HasAnimation() => Colors != null && Colors.Length > 1;
+
+	private bool HasNoColor() => Colors == null || !Colors.Any();
+
+	private void UpdateStyling(GlasColor startColor, GlasColor endColor)
+	{
+		StringBuilder styleBuilder = new StringBuilder(GetColorVariables(startColor, endColor));
+
+		if (!string.IsNullOrWhiteSpace(Width))
+			styleBuilder.Append($"width: {Width};");
+
+		if (!string.IsNullOrWhiteSpace(Height))
+			styleBuilder.Append($"height: {Height};");
+
+		// 3. Store the style in a local variable
+		cardStyle = styleBuilder.ToString();
+	}	
+
+	private string GetColorVariables(GlasColor startColor, GlasColor endColor)
+	{
+		return $@"--var-blazor-glas-card-color-start: rgba({startColor.R}, {startColor.G}, {startColor.B}, 0.3);
+			      --var-blazor-glas-card-color-end: rgba({endColor.R}, {endColor.G}, {endColor.B}, 0.3);";
+	}
+
+	public void Dispose() => changeColorsTimer.Dispose();
+}
